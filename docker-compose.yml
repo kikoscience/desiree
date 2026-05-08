@@ -1,14 +1,10 @@
 services:
   app:
-    image: node:20
-    working_dir: /app
-    volumes:
-      - .:/app
-    environment:
-      - DB_USER=${DB_USER:-sa}
-      - DB_PASSWORD=${DB_PASSWORD:-Rfx14w14w.}
-      - DB_SERVER=${DB_SERVER:-host.docker.internal}
-      - DB_DATABASE=${DB_DATABASE:-EmployeeManagement}
-    command: sh -c "npm install && npm start"
+    build: .
     ports:
-      - "3020:3000"
+      - "3006:3000"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./uploads:/app/uploads
+      - ./public:/app/public
