@@ -102,7 +102,7 @@ async function initDb(retries = 5) {
             console.log('Database initialization check complete.');
             break; // Exit loop on success
         } catch (err) {
-            console.error(\`Database Initialization Error. Retries left: \${retries - 1}\`, err.message);
+            console.error(`Database Initialization Error. Retries left: ${retries - 1}`, err.message);
             retries -= 1;
             if (retries === 0) {
                 console.error('Failed to connect to database after multiple attempts.');
@@ -206,18 +206,18 @@ app.get('/api/employees', requireAuth, async (req, res) => {
         const pool = await sql.connect(dbConfig);
         const { search = '', page = 1, limit = 10 } = req.query;
         const offset = (page - 1) * limit;
-        const searchPattern = `% ${ search } % `;
+        const searchPattern = `%${search}%`;
         
         const countResult = await pool.request()
             .input('search', sql.VarChar, searchPattern)
             .query(`
                 SELECT COUNT(*) as total 
-                FROM[dbo].[Employees] 
+                FROM [dbo].[Employees] 
                 WHERE FullName LIKE @search 
                    OR IdNumber LIKE @search 
                    OR Position LIKE @search 
                    OR Department LIKE @search
-                `);
+            `);
         const total = countResult.recordset[0].total;
 
         const dataResult = await pool.request()
@@ -225,7 +225,7 @@ app.get('/api/employees', requireAuth, async (req, res) => {
             .input('offset', sql.Int, offset)
             .input('limit', sql.Int, parseInt(limit))
             .query(`
-                SELECT * FROM[dbo].[Employees] 
+                SELECT * FROM [dbo].[Employees] 
                 WHERE FullName LIKE @search 
                    OR IdNumber LIKE @search 
                    OR Position LIKE @search 
@@ -233,7 +233,7 @@ app.get('/api/employees', requireAuth, async (req, res) => {
                 ORDER BY FullName
                 OFFSET @offset ROWS
                 FETCH NEXT @limit ROWS ONLY
-                `);
+            `);
 
         res.json({
             data: dataResult.recordset,
@@ -283,17 +283,17 @@ app.post('/api/employees', requireAuth, async (req, res) => {
             .input('EmergencyContactNumber', sql.VarChar, data.EmergencyContactNumber)
             .input('EmergencyContactAddress', sql.NVarChar, data.EmergencyContactAddress)
             .query(`
-                INSERT INTO[dbo].[Employees](
-                    IdNumber, FullName, Position, Department, Unit, DateOfBirth,
-                    GsisBpNo, PagIbigMidNo, PhicNo, TinNo, BloodType, MedicalConditions,
+                INSERT INTO [dbo].[Employees] (
+                    IdNumber, FullName, Position, Department, Unit, DateOfBirth, 
+                    GsisBpNo, PagIbigMidNo, PhicNo, TinNo, BloodType, MedicalConditions, 
                     EmergencyContactPerson, EmergencyContactNumber, EmergencyContactAddress
                 )
-                VALUES(
+                VALUES (
                     @IdNumber, @FullName, @Position, @Department, @Unit, @DateOfBirth,
                     @GsisBpNo, @PagIbigMidNo, @PhicNo, @TinNo, @BloodType, @MedicalConditions,
                     @EmergencyContactPerson, @EmergencyContactNumber, @EmergencyContactAddress
                 )
-                    `);
+            `);
         res.status(201).json({ message: 'Employee added successfully!' });
     } catch (err) {
         res.status(500).json({ message: 'Database Error', error: err.message });
@@ -322,24 +322,24 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
             .input('EmergencyContactNumber', sql.VarChar, data.EmergencyContactNumber)
             .input('EmergencyContactAddress', sql.NVarChar, data.EmergencyContactAddress)
             .query(`
-                UPDATE[dbo].[Employees] SET 
+                UPDATE [dbo].[Employees] SET 
                     IdNumber = @IdNumber,
-                FullName = @FullName,
-                Position = @Position,
-                Department = @Department,
-                Unit = @Unit,
-                DateOfBirth = @DateOfBirth,
-                GsisBpNo = @GsisBpNo,
-                PagIbigMidNo = @PagIbigMidNo,
-                PhicNo = @PhicNo,
-                TinNo = @TinNo,
-                BloodType = @BloodType,
-                MedicalConditions = @MedicalConditions,
-                EmergencyContactPerson = @EmergencyContactPerson,
-                EmergencyContactNumber = @EmergencyContactNumber,
-                EmergencyContactAddress = @EmergencyContactAddress
+                    FullName = @FullName,
+                    Position = @Position,
+                    Department = @Department,
+                    Unit = @Unit,
+                    DateOfBirth = @DateOfBirth,
+                    GsisBpNo = @GsisBpNo,
+                    PagIbigMidNo = @PagIbigMidNo,
+                    PhicNo = @PhicNo,
+                    TinNo = @TinNo,
+                    BloodType = @BloodType,
+                    MedicalConditions = @MedicalConditions,
+                    EmergencyContactPerson = @EmergencyContactPerson,
+                    EmergencyContactNumber = @EmergencyContactNumber,
+                    EmergencyContactAddress = @EmergencyContactAddress
                 WHERE IdNumber = @OriginalId
-                `);
+            `);
         res.json({ message: 'Employee updated successfully!' });
     } catch (err) {
         res.status(500).json({ message: 'Database Error', error: err.message });
