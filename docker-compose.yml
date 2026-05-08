@@ -3,12 +3,14 @@ services:
     build: .
     ports:
       - "3006:3000"
-    environment:
-      - NODE_ENV=production
-      - DB_SERVER=10.0.1.102
-      - DB_USER=sa
-      - DB_PASSWORD=Rfx14w.14w.
-      - DB_DATABASE=EmployeeManagement
+    env_file:
+      - .env
     volumes:
       - ./uploads:/app/uploads
       - ./public:/app/public
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
