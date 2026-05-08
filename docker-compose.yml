@@ -5,6 +5,10 @@ services:
       - "3006:3000"
     environment:
       - NODE_ENV=production
+      - DB_SERVER=10.0.1.102
+      - DB_USER=sa
+      - DB_PASSWORD=Rfx14w.14w.
+      - DB_DATABASE=EmployeeManagement
     volumes:
       - ./uploads:/app/uploads
       - ./public:/app/public

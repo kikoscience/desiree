@@ -34,57 +34,79 @@ const dbConfig = {
 };
 
 // --- DATABASE INITIALIZATION ---
-async function initDb() {
-    try {
-        const pool = await sql.connect(dbConfig);
-        console.log('Initializing Database Components...');
-        
-        // 1. Employees Table
-        await pool.request().query(`
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Employees]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [dbo].[Employees] (
-                    IdNumber VARCHAR(50) PRIMARY KEY,
-                    FullName VARCHAR(255) NOT NULL,
-                    Position VARCHAR(255),
-                    Department VARCHAR(255),
-                    Unit VARCHAR(255),
-                    DateOfBirth DATE,
-                    GsisBpNo VARCHAR(50),
-                    PagIbigMidNo VARCHAR(50),
-                    PhicNo VARCHAR(50),
-                    TinNo VARCHAR(50),
-                    BloodType VARCHAR(10),
-                    MedicalConditions NVARCHAR(MAX),
-                    EmergencyContactPerson VARCHAR(255),
-                    EmergencyContactNumber VARCHAR(50),
-                    EmergencyContactAddress NVARCHAR(MAX)
-                );
-            END
-        `);
+async function initDb(retries = 5) {
+    while (retries > 0) {
+        try {
+            // First, connect to master to ensure the database exists
+            const masterConfig = { ...dbConfig, database: 'master' };
+            const masterPool = new sql.ConnectionPool(masterConfig);
+            await masterPool.connect();
+            await masterPool.request().query(`
+                IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '${dbConfig.database}')
+                BEGIN
+                    CREATE DATABASE [${dbConfig.database}];
+                END
+            `);
+            await masterPool.close();
 
-        // 2. Users Table
-        await pool.request().query(`
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Users]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [dbo].[Users] (
-                    Username VARCHAR(50) PRIMARY KEY,
-                    Password VARCHAR(255) NOT NULL,
-                    FullName VARCHAR(255),
-                    Role VARCHAR(20) NOT NULL -- 'admin' or 'encoder'
-                );
-                
-                -- Seed Sample Accounts
-                INSERT INTO [dbo].[Users] (Username, Password, FullName, Role)
-                VALUES 
-                ('admin', 'admin123', 'System Administrator', 'admin'),
-                ('encoder', 'encoder123', 'Data Encoder', 'encoder');
-            END
-        `);
+            // Connect to our actual database
+            const pool = await sql.connect(dbConfig);
+            console.log('Initializing Database Components...');
+            
+            // 1. Employees Table
+            await pool.request().query(`
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Employees]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [dbo].[Employees] (
+                        IdNumber VARCHAR(50) PRIMARY KEY,
+                        FullName VARCHAR(255) NOT NULL,
+                        Position VARCHAR(255),
+                        Department VARCHAR(255),
+                        Unit VARCHAR(255),
+                        DateOfBirth DATE,
+                        GsisBpNo VARCHAR(50),
+                        PagIbigMidNo VARCHAR(50),
+                        PhicNo VARCHAR(50),
+                        TinNo VARCHAR(50),
+                        BloodType VARCHAR(10),
+                        MedicalConditions NVARCHAR(MAX),
+                        EmergencyContactPerson VARCHAR(255),
+                        EmergencyContactNumber VARCHAR(50),
+                        EmergencyContactAddress NVARCHAR(MAX)
+                    );
+                END
+            `);
 
-        console.log('Database initialization check complete.');
-    } catch (err) {
-        console.error('Database Initialization Error:', err.message);
+            // 2. Users Table
+            await pool.request().query(`
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Users]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [dbo].[Users] (
+                        Username VARCHAR(50) PRIMARY KEY,
+                        Password VARCHAR(255) NOT NULL,
+                        FullName VARCHAR(255),
+                        Role VARCHAR(20) NOT NULL -- 'admin' or 'encoder'
+                    );
+                    
+                    -- Seed Sample Accounts
+                    INSERT INTO [dbo].[Users] (Username, Password, FullName, Role)
+                    VALUES 
+                    ('admin', 'admin123', 'System Administrator', 'admin'),
+                    ('encoder', 'encoder123', 'Data Encoder', 'encoder');
+                END
+            `);
+
+            console.log('Database initialization check complete.');
+            break; // Exit loop on success
+        } catch (err) {
+            console.error(\`Database Initialization Error. Retries left: \${retries - 1}\`, err.message);
+            retries -= 1;
+            if (retries === 0) {
+                console.error('Failed to connect to database after multiple attempts.');
+            } else {
+                await new Promise(res => setTimeout(res, 5000)); // Wait 5 seconds before retrying
+            }
+        }
     }
 }
 
