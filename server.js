@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const sql = require('mssql');
+const mysql = require('mysql2/promise');
 const path = require('path');
 const session = require('express-session');
 
@@ -36,7 +37,30 @@ const dbConfig = {
     }
 };
 
-// --- DATABASE INITIALIZATION ---
+// HRIS master employee data source (MySQL) — READ-ONLY. No INSERT/UPDATE/DELETE
+// is ever issued against this pool; tblemp/tblpi belong to the hris database
+// and must not be modified from this app.
+const hrisPool = mysql.createPool({
+    host: process.env.HRIS_DB_HOST,
+    port: parseInt(process.env.HRIS_DB_PORT || '3306', 10),
+    user: process.env.HRIS_DB_USER,
+    password: process.env.HRIS_DB_PASSWORD,
+    database: process.env.HRIS_DB_DATABASE || 'hris',
+    waitForConnections: true,
+    connectionLimit: 5
+});
+
+const HRIS_EMPLOYEE_SELECT = `
+    SELECT
+        e.Employee_No, e.Full_Name, e.First_Name, e.Middle_Name, e.Last_Name, e.Ext_Name,
+        e.Birthday, e.Office, e.Position, e.Employment_Status, e.Status, e.CP_Emergency,
+        p.Sex, p.Civil_Status, p.Blood_Type, p.GSIS_No, p.Pagibig_No, p.Philhealth_No,
+        p.SSS_No, p.TIN_No
+    FROM tblemp e
+    LEFT JOIN tblpi p ON p.emp_ID = e.emp_ID
+`;
+
+// --- DATABASE INITIALIZATION (local app database only — hris is untouched) ---
 async function initDb(retries = 5) {
     while (retries > 0) {
         try {
@@ -56,22 +80,15 @@ async function initDb(retries = 5) {
             const pool = await sql.connect(dbConfig);
             console.log('Initializing Database Components...');
 
-            // 1. Employees Table
+            // 1. EmployeeSupplement Table — holds only the fields hris.tblemp/tblpi
+            // don't already have, keyed by the hris Employee_No. Master employee
+            // data (name, position, office, statutory numbers) always comes live
+            // from hris and is never duplicated or written back here.
             await pool.request().query(`
-                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Employees]') AND type in (N'U'))
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[EmployeeSupplement]') AND type in (N'U'))
                 BEGIN
-                    CREATE TABLE [dbo].[Employees] (
-                        IdNumber VARCHAR(50) PRIMARY KEY,
-                        FullName VARCHAR(255) NOT NULL,
-                        Position VARCHAR(255),
-                        Department VARCHAR(255),
-                        Unit VARCHAR(255),
-                        DateOfBirth DATE,
-                        GsisBpNo VARCHAR(50),
-                        PagIbigMidNo VARCHAR(50),
-                        PhicNo VARCHAR(50),
-                        TinNo VARCHAR(50),
-                        BloodType VARCHAR(10),
+                    CREATE TABLE [dbo].[EmployeeSupplement] (
+                        EmployeeNo VARCHAR(20) PRIMARY KEY,
                         MedicalConditions NVARCHAR(MAX),
                         EmergencyContactPerson VARCHAR(255),
                         EmergencyContactNumber VARCHAR(50),
@@ -90,10 +107,10 @@ async function initDb(retries = 5) {
                         FullName VARCHAR(255),
                         Role VARCHAR(20) NOT NULL -- 'admin' or 'encoder'
                     );
-                    
+
                     -- Seed Sample Accounts
                     INSERT INTO [dbo].[Users] (Username, Password, FullName, Role)
-                    VALUES 
+                    VALUES
                     ('admin', 'admin123', 'System Administrator', 'admin'),
                     ('encoder', 'encoder123', 'Data Encoder', 'encoder');
                 END
@@ -176,7 +193,7 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
 
     try {
         const pool = await sql.connect(dbConfig);
-        
+
         // Verify current password
         const verify = await pool.request()
             .input('username', sql.VarChar, username)
@@ -199,44 +216,99 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
     }
 });
 
+// --- HELPERS ---
+
+// Merge live hris master data with the local supplement row for one employee.
+function mergeEmployee(hrisRow, supplementRow) {
+    return {
+        IdNumber: hrisRow.Employee_No,
+        FullName: hrisRow.Full_Name,
+        FirstName: hrisRow.First_Name,
+        MiddleName: hrisRow.Middle_Name,
+        LastName: hrisRow.Last_Name,
+        ExtName: hrisRow.Ext_Name,
+        Position: hrisRow.Position,
+        Department: hrisRow.Office,
+        EmploymentStatus: hrisRow.Employment_Status,
+        Status: hrisRow.Status,
+        DateOfBirth: hrisRow.Birthday,
+        Sex: hrisRow.Sex,
+        CivilStatus: hrisRow.Civil_Status,
+        BloodType: hrisRow.Blood_Type,
+        GsisBpNo: hrisRow.GSIS_No,
+        PagIbigMidNo: hrisRow.Pagibig_No,
+        PhicNo: hrisRow.Philhealth_No,
+        SssNo: hrisRow.SSS_No,
+        TinNo: hrisRow.TIN_No,
+        HrisEmergencyContact: hrisRow.CP_Emergency,
+        MedicalConditions: supplementRow ? supplementRow.MedicalConditions : null,
+        EmergencyContactPerson: supplementRow ? supplementRow.EmergencyContactPerson : null,
+        EmergencyContactNumber: supplementRow ? supplementRow.EmergencyContactNumber : null,
+        EmergencyContactAddress: supplementRow ? supplementRow.EmergencyContactAddress : null
+    };
+}
+
 // --- API ENDPOINTS ---
+
+// Read-only lookup against hris, used to confirm an Employee_No exists before
+// attaching supplemental data to it.
+app.get('/api/hris-employee/:employeeNo', requireAuth, async (req, res) => {
+    try {
+        const [rows] = await hrisPool.query(
+            `${HRIS_EMPLOYEE_SELECT} WHERE e.Employee_No = ? LIMIT 1`,
+            [req.params.employeeNo]
+        );
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Employee not found in HRIS' });
+        }
+        res.json(mergeEmployee(rows[0], null));
+    } catch (err) {
+        res.status(500).json({ message: 'HRIS Lookup Error', error: err.message });
+    }
+});
 
 app.get('/api/employees', requireAuth, async (req, res) => {
     try {
-        const pool = await sql.connect(dbConfig);
         const { search = '', page = 1, limit = 10 } = req.query;
         const offset = (page - 1) * limit;
         const searchPattern = `%${search}%`;
-        
-        const countResult = await pool.request()
-            .input('search', sql.VarChar, searchPattern)
-            .query(`
-                SELECT COUNT(*) as total 
-                FROM [dbo].[Employees] 
-                WHERE FullName LIKE @search 
-                   OR IdNumber LIKE @search 
-                   OR Position LIKE @search 
-                   OR Department LIKE @search
-            `);
-        const total = countResult.recordset[0].total;
 
-        const dataResult = await pool.request()
-            .input('search', sql.VarChar, searchPattern)
-            .input('offset', sql.Int, offset)
-            .input('limit', sql.Int, parseInt(limit))
-            .query(`
-                SELECT * FROM [dbo].[Employees] 
-                WHERE FullName LIKE @search 
-                   OR IdNumber LIKE @search 
-                   OR Position LIKE @search 
-                   OR Department LIKE @search
-                ORDER BY FullName
-                OFFSET @offset ROWS
-                FETCH NEXT @limit ROWS ONLY
-            `);
+        const [countRows] = await hrisPool.query(
+            `SELECT COUNT(*) as total FROM tblemp e
+             WHERE e.Full_Name LIKE ? OR e.Employee_No LIKE ? OR e.Position LIKE ? OR e.Office LIKE ?`,
+            [searchPattern, searchPattern, searchPattern, searchPattern]
+        );
+        const total = countRows[0].total;
+
+        const [hrisRows] = await hrisPool.query(
+            `${HRIS_EMPLOYEE_SELECT}
+             WHERE e.Full_Name LIKE ? OR e.Employee_No LIKE ? OR e.Position LIKE ? OR e.Office LIKE ?
+             ORDER BY e.Full_Name
+             LIMIT ? OFFSET ?`,
+            [searchPattern, searchPattern, searchPattern, searchPattern, parseInt(limit), offset]
+        );
+
+        const employeeNos = hrisRows.map(r => r.Employee_No);
+        const pool = await sql.connect(dbConfig);
+        const supplementByNo = {};
+        if (employeeNos.length > 0) {
+            const request = pool.request();
+            const placeholders = employeeNos.map((no, i) => {
+                request.input(`no${i}`, sql.VarChar, no);
+                return `@no${i}`;
+            }).join(', ');
+            const supplementResult = await request.query(
+                `SELECT * FROM [dbo].[EmployeeSupplement] WHERE EmployeeNo IN (${placeholders})`
+            );
+            supplementResult.recordset.forEach(row => {
+                supplementByNo[row.EmployeeNo] = row;
+            });
+        }
+
+        const data = hrisRows.map(row => mergeEmployee(row, supplementByNo[row.Employee_No]));
 
         res.json({
-            data: dataResult.recordset,
+            data,
             total,
             page: parseInt(page),
             totalPages: Math.ceil(total / limit)
@@ -248,97 +320,97 @@ app.get('/api/employees', requireAuth, async (req, res) => {
 
 app.get('/api/employees/:id', requireAuth, async (req, res) => {
     try {
-        const pool = await sql.connect(dbConfig);
-        const result = await pool.request()
-            .input('IdNumber', sql.VarChar, req.params.id)
-            .query('SELECT * FROM [dbo].[Employees] WHERE IdNumber = @IdNumber');
-        
-        if (result.recordset.length === 0) {
+        const [hrisRows] = await hrisPool.query(
+            `${HRIS_EMPLOYEE_SELECT} WHERE e.Employee_No = ? LIMIT 1`,
+            [req.params.id]
+        );
+        if (hrisRows.length === 0) {
             return res.status(404).json({ message: 'Employee not found' });
         }
-        res.json(result.recordset[0]);
+
+        const pool = await sql.connect(dbConfig);
+        const supplementResult = await pool.request()
+            .input('EmployeeNo', sql.VarChar, req.params.id)
+            .query('SELECT * FROM [dbo].[EmployeeSupplement] WHERE EmployeeNo = @EmployeeNo');
+
+        res.json(mergeEmployee(hrisRows[0], supplementResult.recordset[0]));
     } catch (err) {
         res.status(500).json({ message: 'Database Error', error: err.message });
     }
 });
 
+// Creates the local supplemental record for an employee that must already
+// exist in hris. Never writes to the hris database itself.
 app.post('/api/employees', requireAuth, async (req, res) => {
     try {
-        const pool = await sql.connect(dbConfig);
         const data = req.body;
+        const [hrisRows] = await hrisPool.query(
+            'SELECT Employee_No FROM tblemp WHERE Employee_No = ? LIMIT 1',
+            [data.IdNumber]
+        );
+        if (hrisRows.length === 0) {
+            return res.status(404).json({ message: 'That Employee No. was not found in HRIS. It must exist in HRIS before supplemental info can be added.' });
+        }
+
+        const pool = await sql.connect(dbConfig);
+        const existing = await pool.request()
+            .input('EmployeeNo', sql.VarChar, data.IdNumber)
+            .query('SELECT EmployeeNo FROM [dbo].[EmployeeSupplement] WHERE EmployeeNo = @EmployeeNo');
+        if (existing.recordset.length > 0) {
+            return res.status(409).json({ message: 'Supplemental info already exists for this employee. Use edit instead.' });
+        }
+
         await pool.request()
-            .input('IdNumber', sql.VarChar, data.IdNumber)
-            .input('FullName', sql.VarChar, data.FullName)
-            .input('Position', sql.VarChar, data.Position)
-            .input('Department', sql.VarChar, data.Department)
-            .input('Unit', sql.VarChar, data.Unit)
-            .input('DateOfBirth', sql.Date, data.DateOfBirth || null)
-            .input('GsisBpNo', sql.VarChar, data.GsisBpNo)
-            .input('PagIbigMidNo', sql.VarChar, data.PagIbigMidNo)
-            .input('PhicNo', sql.VarChar, data.PhicNo)
-            .input('TinNo', sql.VarChar, data.TinNo)
-            .input('BloodType', sql.VarChar, data.BloodType)
+            .input('EmployeeNo', sql.VarChar, data.IdNumber)
             .input('MedicalConditions', sql.NVarChar, data.MedicalConditions)
             .input('EmergencyContactPerson', sql.VarChar, data.EmergencyContactPerson)
             .input('EmergencyContactNumber', sql.VarChar, data.EmergencyContactNumber)
             .input('EmergencyContactAddress', sql.NVarChar, data.EmergencyContactAddress)
             .query(`
-                INSERT INTO [dbo].[Employees] (
-                    IdNumber, FullName, Position, Department, Unit, DateOfBirth, 
-                    GsisBpNo, PagIbigMidNo, PhicNo, TinNo, BloodType, MedicalConditions, 
-                    EmergencyContactPerson, EmergencyContactNumber, EmergencyContactAddress
+                INSERT INTO [dbo].[EmployeeSupplement] (
+                    EmployeeNo, MedicalConditions, EmergencyContactPerson, EmergencyContactNumber, EmergencyContactAddress
                 )
                 VALUES (
-                    @IdNumber, @FullName, @Position, @Department, @Unit, @DateOfBirth,
-                    @GsisBpNo, @PagIbigMidNo, @PhicNo, @TinNo, @BloodType, @MedicalConditions,
-                    @EmergencyContactPerson, @EmergencyContactNumber, @EmergencyContactAddress
+                    @EmployeeNo, @MedicalConditions, @EmergencyContactPerson, @EmergencyContactNumber, @EmergencyContactAddress
                 )
             `);
-        res.status(201).json({ message: 'Employee added successfully!' });
+        res.status(201).json({ message: 'Supplemental info added successfully!' });
     } catch (err) {
         res.status(500).json({ message: 'Database Error', error: err.message });
     }
 });
 
+// Updates the local supplemental record only. The Employee_No / master hris
+// fields cannot be changed from here.
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
     try {
-        const pool = await sql.connect(dbConfig);
         const data = req.body;
+        const pool = await sql.connect(dbConfig);
         await pool.request()
-            .input('OriginalId', sql.VarChar, req.params.id)
-            .input('IdNumber', sql.VarChar, data.IdNumber)
-            .input('FullName', sql.VarChar, data.FullName)
-            .input('Position', sql.VarChar, data.Position)
-            .input('Department', sql.VarChar, data.Department)
-            .input('Unit', sql.VarChar, data.Unit)
-            .input('DateOfBirth', sql.Date, data.DateOfBirth || null)
-            .input('GsisBpNo', sql.VarChar, data.GsisBpNo)
-            .input('PagIbigMidNo', sql.VarChar, data.PagIbigMidNo)
-            .input('PhicNo', sql.VarChar, data.PhicNo)
-            .input('TinNo', sql.VarChar, data.TinNo)
-            .input('BloodType', sql.VarChar, data.BloodType)
+            .input('EmployeeNo', sql.VarChar, req.params.id)
             .input('MedicalConditions', sql.NVarChar, data.MedicalConditions)
             .input('EmergencyContactPerson', sql.VarChar, data.EmergencyContactPerson)
             .input('EmergencyContactNumber', sql.VarChar, data.EmergencyContactNumber)
             .input('EmergencyContactAddress', sql.NVarChar, data.EmergencyContactAddress)
             .query(`
-                UPDATE [dbo].[Employees] SET 
-                    IdNumber = @IdNumber,
-                    FullName = @FullName,
-                    Position = @Position,
-                    Department = @Department,
-                    Unit = @Unit,
-                    DateOfBirth = @DateOfBirth,
-                    GsisBpNo = @GsisBpNo,
-                    PagIbigMidNo = @PagIbigMidNo,
-                    PhicNo = @PhicNo,
-                    TinNo = @TinNo,
-                    BloodType = @BloodType,
-                    MedicalConditions = @MedicalConditions,
-                    EmergencyContactPerson = @EmergencyContactPerson,
-                    EmergencyContactNumber = @EmergencyContactNumber,
-                    EmergencyContactAddress = @EmergencyContactAddress
-                WHERE IdNumber = @OriginalId
+                IF EXISTS (SELECT 1 FROM [dbo].[EmployeeSupplement] WHERE EmployeeNo = @EmployeeNo)
+                BEGIN
+                    UPDATE [dbo].[EmployeeSupplement] SET
+                        MedicalConditions = @MedicalConditions,
+                        EmergencyContactPerson = @EmergencyContactPerson,
+                        EmergencyContactNumber = @EmergencyContactNumber,
+                        EmergencyContactAddress = @EmergencyContactAddress
+                    WHERE EmployeeNo = @EmployeeNo
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO [dbo].[EmployeeSupplement] (
+                        EmployeeNo, MedicalConditions, EmergencyContactPerson, EmergencyContactNumber, EmergencyContactAddress
+                    )
+                    VALUES (
+                        @EmployeeNo, @MedicalConditions, @EmergencyContactPerson, @EmergencyContactNumber, @EmergencyContactAddress
+                    )
+                END
             `);
         res.json({ message: 'Employee updated successfully!' });
     } catch (err) {
@@ -346,13 +418,14 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Deletes only the local supplemental record. hris master data is untouched.
 app.delete('/api/employees/:id', requireAdmin, async (req, res) => {
     try {
         const pool = await sql.connect(dbConfig);
         await pool.request()
-            .input('IdNumber', sql.VarChar, req.params.id)
-            .query('DELETE FROM [dbo].[Employees] WHERE IdNumber = @IdNumber');
-        res.json({ message: 'Employee deleted successfully!' });
+            .input('EmployeeNo', sql.VarChar, req.params.id)
+            .query('DELETE FROM [dbo].[EmployeeSupplement] WHERE EmployeeNo = @EmployeeNo');
+        res.json({ message: 'Supplemental record deleted successfully!' });
     } catch (err) {
         res.status(500).json({ message: 'Database Error', error: err.message });
     }

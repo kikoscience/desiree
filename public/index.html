@@ -20,7 +20,7 @@
                 <div style="display: flex; gap: 1rem; align-items: center;">
                     <button id="addNewBtn" class="btn-primary">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        Add Employee
+                        Add Supplemental Info
                     </button>
                     
                     <div class="user-profile" style="position: relative; display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); padding: 6px 16px; border-radius: 40px; border: 1px solid var(--border-subtle); cursor: pointer;" id="userMenuBtn">
@@ -41,10 +41,13 @@
             <div class="header-controls">
                 <div class="search-box">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-low)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" id="searchInput" placeholder="Search by name, ID, position, or department...">
+                    <input type="text" id="searchInput" placeholder="Search by name, employee no., position, or office...">
                 </div>
             </div>
         </header>
+        <p style="padding: 0 2rem; margin: 0.5rem 0 0; font-size: 0.75rem; color: var(--text-low);">
+            Master employee data (name, position, office, statutory numbers) is sourced live and read-only from HRIS. Only Medical Conditions and Emergency Contact info can be edited here.
+        </p>
 
         <!-- Main Display -->
         <main class="content-area">
@@ -55,11 +58,11 @@
                     <table id="employeeTable">
                         <thead>
                             <tr>
-                                <th>Ref ID</th>
+                                <th>Employee No.</th>
                                 <th>Full Name</th>
                                 <th>Position</th>
-                                <th>Department</th>
-                                <th>Unit</th>
+                                <th>Office</th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -91,74 +94,75 @@
                     
                     <form id="employeeForm">
                         <input type="hidden" id="originalId" name="originalId">
-                        
+
                         <div class="form-scroll-area">
-                            <!-- Corporate Section -->
-                            <div class="form-section">
-                                <h3>Employment Information</h3>
+                            <!-- HRIS Lookup Section (add mode only) -->
+                            <div class="form-section" id="lookupSection">
+                                <h3>Find HRIS Employee</h3>
                                 <div class="input-grid">
                                     <div class="input-group">
-                                        <label>ID Number</label>
-                                        <input type="text" id="IdNumber" name="IdNumber" required>
+                                        <label>Employee No.</label>
+                                        <input type="text" id="IdNumber" name="IdNumber" placeholder="e.g. CDH-2023-244" required>
                                     </div>
+                                    <div class="input-group" style="align-self: end;">
+                                        <button type="button" id="lookupBtn" class="btn-secondary">Look Up</button>
+                                    </div>
+                                </div>
+                                <p id="lookupHint" style="font-size: 0.8rem; color: var(--text-low); margin-top: 0.5rem;">Enter an existing HRIS Employee No. and look it up before adding supplemental info.</p>
+                            </div>
+
+                            <!-- Corporate Section (read-only, sourced from HRIS) -->
+                            <div class="form-section">
+                                <h3>Employment Information <span style="font-size: 0.7rem; color: var(--text-low); font-weight: 400;">(from HRIS, read-only)</span></h3>
+                                <div class="input-grid">
                                     <div class="input-group">
-                                        <label>Department</label>
-                                        <input type="text" id="Department" name="Department" required>
+                                        <label>Office</label>
+                                        <input type="text" id="Department" readonly disabled>
                                     </div>
                                     <div class="input-group">
                                         <label>Position</label>
-                                        <input type="text" id="Position" name="Position" required>
+                                        <input type="text" id="Position" readonly disabled>
                                     </div>
                                     <div class="input-group">
-                                        <label>Unit</label>
-                                        <input type="text" id="Unit" name="Unit">
+                                        <label>Employment Status</label>
+                                        <input type="text" id="EmploymentStatus" readonly disabled>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Personal Section -->
+                            <!-- Personal Section (read-only, sourced from HRIS) -->
                             <div class="form-section">
-                                <h3>Personal Profile</h3>
+                                <h3>Personal Profile <span style="font-size: 0.7rem; color: var(--text-low); font-weight: 400;">(from HRIS, read-only)</span></h3>
                                 <div class="input-grid">
                                     <div class="input-group full-width">
                                         <label>Full Name</label>
-                                        <input type="text" id="FullName" name="FullName" required>
+                                        <input type="text" id="FullName" readonly disabled>
                                     </div>
                                     <div class="input-group">
                                         <label>Date of Birth</label>
-                                        <input type="date" id="DateOfBirth" name="DateOfBirth">
+                                        <input type="text" id="DateOfBirth" readonly disabled>
                                     </div>
                                     <div class="input-group">
                                         <label>Blood Type</label>
-                                        <select id="BloodType" name="BloodType">
-                                            <option value="">Select...</option>
-                                            <option value="A+">A+</option>
-                                            <option value="A-">A-</option>
-                                            <option value="B+">B+</option>
-                                            <option value="B-">B-</option>
-                                            <option value="AB+">AB+</option>
-                                            <option value="AB-">AB-</option>
-                                            <option value="O+">O+</option>
-                                            <option value="O-">O-</option>
-                                        </select>
+                                        <input type="text" id="BloodType" readonly disabled>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Statutory Section -->
+                            <!-- Statutory Section (read-only, sourced from HRIS) -->
                             <div class="form-section">
-                                <h3>Statutory Details</h3>
+                                <h3>Statutory Details <span style="font-size: 0.7rem; color: var(--text-low); font-weight: 400;">(from HRIS, read-only)</span></h3>
                                 <div class="input-grid">
-                                    <div class="input-group"><label>TIN</label><input type="text" id="TinNo" name="TinNo"></div>
-                                    <div class="input-group"><label>PhilHealth</label><input type="text" id="PhicNo" name="PhicNo"></div>
-                                    <div class="input-group"><label>Pag-IBIG</label><input type="text" id="PagIbigMidNo" name="PagIbigMidNo"></div>
-                                    <div class="input-group"><label>GSIS BP</label><input type="text" id="GsisBpNo" name="GsisBpNo"></div>
+                                    <div class="input-group"><label>TIN</label><input type="text" id="TinNo" readonly disabled></div>
+                                    <div class="input-group"><label>PhilHealth</label><input type="text" id="PhicNo" readonly disabled></div>
+                                    <div class="input-group"><label>Pag-IBIG</label><input type="text" id="PagIbigMidNo" readonly disabled></div>
+                                    <div class="input-group"><label>GSIS BP</label><input type="text" id="GsisBpNo" readonly disabled></div>
                                 </div>
                             </div>
 
-                            <!-- Emergency Section -->
+                            <!-- Emergency Section (editable, stored locally) -->
                             <div class="form-section">
-                                <h3>Emergency & Medical</h3>
+                                <h3>Emergency & Medical <span style="font-size: 0.7rem; color: var(--text-low); font-weight: 400;">(editable, stored in this app)</span></h3>
                                 <div class="input-grid">
                                     <div class="input-group full-width">
                                         <label>Medical Conditions</label>

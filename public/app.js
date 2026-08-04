@@ -223,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         data.forEach(emp => {
             const initial = emp.FullName ? emp.FullName.charAt(0).toUpperCase() : '?';
             const isAdmin = currentUser && currentUser.role === 'admin';
-            
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td><span class="identity-badge">${emp.IdNumber}</span></td>
@@ -233,9 +233,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <strong>${emp.FullName || 'Unnamed'}</strong>
                     </div>
                 </td>
-                <td><span style="color: var(--text-high); font-weight: 500;">${emp.Position}</span></td>
-                <td><span class="tag">${emp.Department}</span></td>
-                <td>${emp.Unit || '<span style="color:var(--text-low)">-</span>'}</td>
+                <td><span style="color: var(--text-high); font-weight: 500;">${emp.Position || ''}</span></td>
+                <td><span class="tag">${emp.Department || ''}</span></td>
+                <td>${emp.Status || '<span style="color:var(--text-low)">-</span>'}</td>
                 <td>
                     <div class="action-cell">
                         <button class="btn-edit" data-id="${emp.IdNumber}">Edit</button>
@@ -257,33 +257,60 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Fills the read-only HRIS-sourced fields in the form
+    function populateHrisFields(emp) {
+        document.getElementById('IdNumber').value = emp.IdNumber;
+        document.getElementById('FullName').value = emp.FullName || '';
+        document.getElementById('Department').value = emp.Department || '';
+        document.getElementById('Position').value = emp.Position || '';
+        document.getElementById('EmploymentStatus').value = emp.EmploymentStatus || '';
+        document.getElementById('DateOfBirth').value = emp.DateOfBirth ? emp.DateOfBirth.split('T')[0] : '';
+        document.getElementById('BloodType').value = emp.BloodType || '';
+        document.getElementById('TinNo').value = emp.TinNo || '';
+        document.getElementById('PhicNo').value = emp.PhicNo || '';
+        document.getElementById('PagIbigMidNo').value = emp.PagIbigMidNo || '';
+        document.getElementById('GsisBpNo').value = emp.GsisBpNo || '';
+    }
+
     async function loadEmployeeForEdit(id) {
         try {
             const response = await fetch(`/api/employees/${id}`);
             const emp = await response.json();
             showForm(true);
-            
-            // Fill form
+
             document.getElementById('originalId').value = emp.IdNumber;
-            document.getElementById('IdNumber').value = emp.IdNumber;
-            document.getElementById('FullName').value = emp.FullName;
-            document.getElementById('Department').value = emp.Department;
-            document.getElementById('Position').value = emp.Position;
-            document.getElementById('Unit').value = emp.Unit || '';
-            if (emp.DateOfBirth) document.getElementById('DateOfBirth').value = emp.DateOfBirth.split('T')[0];
-            document.getElementById('BloodType').value = emp.BloodType || '';
-            document.getElementById('TinNo').value = emp.TinNo || '';
-            document.getElementById('PhicNo').value = emp.PhicNo || '';
-            document.getElementById('PagIbigMidNo').value = emp.PagIbigMidNo || '';
-            document.getElementById('GsisBpNo').value = emp.GsisBpNo || '';
+            populateHrisFields(emp);
             document.getElementById('MedicalConditions').value = emp.MedicalConditions || '';
-            document.getElementById('EmergencyContactPerson').value = emp.EmergencyContactPerson || '';
+            document.getElementById('EmergencyContactPerson').value = emp.EmergencyContactPerson || emp.HrisEmergencyContact || '';
             document.getElementById('EmergencyContactNumber').value = emp.EmergencyContactNumber || '';
             document.getElementById('EmergencyContactAddress').value = emp.EmergencyContactAddress || '';
         } catch (err) {
             showToast('Error loading profile.', 'error');
         }
     }
+
+    // HRIS Look Up button (add mode)
+    const lookupBtn = document.getElementById('lookupBtn');
+    lookupBtn.addEventListener('click', async () => {
+        const employeeNo = document.getElementById('IdNumber').value.trim();
+        if (!employeeNo) {
+            showToast('Enter an Employee No. first.', 'error');
+            return;
+        }
+        try {
+            const response = await fetch(`/api/hris-employee/${encodeURIComponent(employeeNo)}`);
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.message || 'Employee not found in HRIS.');
+            }
+            const emp = await response.json();
+            populateHrisFields(emp);
+            document.getElementById('EmergencyContactPerson').value = emp.HrisEmergencyContact || '';
+            showToast(`Found: ${emp.FullName}`, 'success');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    });
 
     function updatePaginationUI(result) {
         totalPages = result.totalPages;
@@ -299,10 +326,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function showForm(isEdit = false) {
         listView.classList.add('hidden');
         formView.classList.remove('hidden');
-        formTitle.textContent = isEdit ? 'Modify Talent Profile' : 'Initialize Talent Profile';
+        formTitle.textContent = isEdit ? 'Modify Supplemental Info' : 'Add Supplemental Info';
+
+        const lookupSection = document.getElementById('lookupSection');
+        const idNumberInput = document.getElementById('IdNumber');
         if (!isEdit) {
             employeeForm.reset();
             document.getElementById('originalId').value = '';
+            lookupSection.classList.remove('hidden');
+            idNumberInput.readOnly = false;
+            idNumberInput.disabled = false;
+        } else {
+            lookupSection.classList.add('hidden');
+            idNumberInput.readOnly = true;
         }
     }
 
