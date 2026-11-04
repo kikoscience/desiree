@@ -54,6 +54,7 @@ const HRIS_EMPLOYEE_SELECT = `
     SELECT
         e.Employee_No, e.Full_Name, e.First_Name, e.Middle_Name, e.Last_Name, e.Ext_Name,
         e.Birthday, e.Office, e.Position, e.Employment_Status, e.Status, e.CP_Emergency,
+        e.PRC_No, e.PRC_ExpDate, e.PH_Accred, e.PhAccred_ExpDate,
         p.Sex, p.Civil_Status, p.Blood_Type, p.GSIS_No, p.Pagibig_No, p.Philhealth_No,
         p.SSS_No, p.TIN_No
     FROM tblemp e
@@ -240,6 +241,10 @@ function mergeEmployee(hrisRow, supplementRow) {
         PhicNo: hrisRow.Philhealth_No,
         SssNo: hrisRow.SSS_No,
         TinNo: hrisRow.TIN_No,
+        PrcNo: hrisRow.PRC_No,
+        PrcExpDate: hrisRow.PRC_ExpDate,
+        PhAccredNo: hrisRow.PH_Accred,
+        PhAccredExpDate: hrisRow.PhAccred_ExpDate,
         HrisEmergencyContact: hrisRow.CP_Emergency,
         MedicalConditions: supplementRow ? supplementRow.MedicalConditions : null,
         EmergencyContactPerson: supplementRow ? supplementRow.EmergencyContactPerson : null,

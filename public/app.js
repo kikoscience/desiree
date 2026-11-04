@@ -270,6 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('PhicNo').value = emp.PhicNo || '';
         document.getElementById('PagIbigMidNo').value = emp.PagIbigMidNo || '';
         document.getElementById('GsisBpNo').value = emp.GsisBpNo || '';
+        document.getElementById('PhAccredNo').value = emp.PhAccredNo || '';
+        document.getElementById('PhAccredExpDate').value = emp.PhAccredExpDate ? emp.PhAccredExpDate.split('T')[0] : '';
+        document.getElementById('PrcNo').value = emp.PrcNo || '';
+        document.getElementById('PrcExpDate').value = emp.PrcExpDate ? emp.PrcExpDate.split('T')[0] : '';
     }
 
     async function loadEmployeeForEdit(id) {
