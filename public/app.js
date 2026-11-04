@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const employeeTableBody = document.getElementById('employeeTableBody');
     const employeeForm = document.getElementById('employeeForm');
     const searchInput = document.getElementById('searchInput');
-    const addNewBtn = document.getElementById('addNewBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const formTitle = document.getElementById('formTitle');
     const toastContainer = document.getElementById('toastContainer');
@@ -85,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    addNewBtn.addEventListener('click', () => showForm());
     cancelBtn.addEventListener('click', () => showList());
 
     // Search logic with debounce
@@ -238,20 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${emp.Status || '<span style="color:var(--text-low)">-</span>'}</td>
                 <td>
                     <div class="action-cell">
-                        <button class="btn-edit" data-id="${emp.IdNumber}">Edit</button>
-                        ${isAdmin ? `<button class="btn-danger" data-id="${emp.IdNumber}" data-name="${emp.FullName}">Delete</button>` : ''}
+                        <button class="btn-edit" data-id="${emp.IdNumber}">View</button>
                     </div>
                 </td>
             `;
             
             tr.querySelector('.btn-edit').addEventListener('click', () => loadEmployeeForEdit(emp.IdNumber));
-            if (isAdmin) {
-                tr.querySelector('.btn-danger').addEventListener('click', () => {
-                    employeeToDelete = emp.IdNumber;
-                    deleteEmployeeName.textContent = emp.FullName;
-                    deleteModal.classList.remove('hidden');
-                });
-            }
 
             employeeTableBody.appendChild(tr);
         });
@@ -330,7 +320,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function showForm(isEdit = false) {
         listView.classList.add('hidden');
         formView.classList.remove('hidden');
-        formTitle.textContent = isEdit ? 'Modify Supplemental Info' : 'Add Supplemental Info';
+        formTitle.textContent = 'Employee Details';
+        employeeForm.querySelectorAll('input, textarea, select').forEach(el => el.disabled = true);
+        document.getElementById('submitBtn').classList.add('hidden');
 
         const lookupSection = document.getElementById('lookupSection');
         const idNumberInput = document.getElementById('IdNumber');
